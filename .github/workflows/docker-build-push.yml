@@ -38,7 +38,30 @@ jobs:
           username: ec2-user
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
+            echo "Pulling latest image..."
             sudo docker pull ${{ secrets.DOCKER_IMAGE_NAME }}:latest
-            sudo docker rm -f app || true
-            sudo fuser -k 80/tcp || true
+
+            echo "Stopping old container (if any)..."
+            sudo docker stop app || echo "No container named 'app' was running."
+
+            echo "Removing old container (if any)..."
+            sudo docker rm -f app || echo "No container named 'app' to remove."
+
+            # Check and free port 80 if occupied
+            PORT_OCCUPIED_CONTAINER=$(sudo docker ps --filter "publish=80" --format "{{.ID}}")
+            if [ -n "$PORT_OCCUPIED_CONTAINER" ]; then
+              echo "Port 80 is occupied by container $PORT_OCCUPIED_CONTAINER, stopping it..."
+              sudo docker stop "$PORT_OCCUPIED_CONTAINER"
+              sudo docker rm "$PORT_OCCUPIED_CONTAINER"
+            fi
+
+            sleep 2  # wait a bit to ensure cleanup
+
+            echo "Running new container..."
             sudo docker run -d --name app -p 80:9000 ${{ secrets.DOCKER_IMAGE_NAME }}:latest
+
+            echo "Current running containers:"
+            sudo docker ps -a
+
+            echo "Logs from new container (last 50 lines):"
+            sudo docker logs --tail 50 app
