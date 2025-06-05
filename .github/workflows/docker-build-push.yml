@@ -40,4 +40,5 @@ jobs:
           script: |
             sudo docker pull ${{ secrets.DOCKER_IMAGE_NAME }}:latest
             sudo docker rm -f app || true
+            sudo fuser -k 80/tcp || true
             sudo docker run -d --name app -p 80:9000 ${{ secrets.DOCKER_IMAGE_NAME }}:latest
