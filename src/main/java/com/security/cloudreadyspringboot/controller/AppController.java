@@ -35,4 +35,8 @@ public class AppController {
         log.info("Received /echo request with body: {}", input);
         return ResponseEntity.ok(input);
     }
+    @GetMapping("/cicd-test")
+    public ResponseEntity<String> testDeployment() {
+        return ResponseEntity.ok("CI/CD deployment is working successfully!");
+    }
 }

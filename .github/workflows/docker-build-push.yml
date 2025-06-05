@@ -25,3 +25,19 @@ jobs:
           file: ./Dockerfile
           push: true
           tags: ${{ secrets.DOCKER_IMAGE_NAME }}:latest
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to EC2 via SSH
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ec2-user
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            sudo docker pull ${{ secrets.DOCKER_IMAGE_NAME }}:latest
+            sudo docker rm -f app || true
+            sudo docker run -d --name app -p 80:9000 ${{ secrets.DOCKER_IMAGE_NAME }}:latest
