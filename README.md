@@ -16,10 +16,15 @@
 *   [Accessing the Application](#accessing-the-application)
 *   [Checking the Running Port](#checking-the-running-port)
 *   [CI/CD Pipeline (GitHub Actions)](#cicd-pipeline-github-actions)
-*   [GitHub Secrets](#github-secrets)
+*  [GitHub Secrets](#github-secrets-)
 *   [Push Code to GitHub to Trigger Workflow](#push-code-to-github-to-trigger-workflow)
 *   [Testing](#testing)
-* [Assumptions and Decisions](#assumptions-and-decisions)
+ ## Must-Read Section (Critical Sections)
+*  **[Assumptions Made During Implementation](#assumptions-made-during-implementation)** 
+*  **[Challenges Faced & How I Solved Them](#challenges-faced--how-i-solved-them)**
+*  **[Manual Work](#manual-work-)**
+*  **[Remaining Work / Future Improvements](#remaining-work--future-improvements)**
+
 
 ## Overview
 
@@ -40,8 +45,7 @@ This repository contains a Spring Boot application that is Dockerized and deploy
 1. **Push to GitHub**: Developer pushes code changes to the main branch.
 2. **GitHub Actions Trigger**: The workflow detects changes in src/, Dockerfile, or pom.xml.
 3. **Build and Push**:
-    - Checks out the code.
-    - Caches Maven dependencies and Docker layers to reduce build time.
+    - Checks out the code
     - Builds the Docker image using the Dockerfile.
     - Pushes the image to Docker Hub.
 4. **Deploy to EC2**:
@@ -321,6 +325,7 @@ jobs:
 This pipeline builds and pushes the Docker image to Docker Hub and then deploys it to the EC2 instance via SSH.
 
 ## GitHub Secrets 
+
 Configure the following secrets in your GitHub repository:
 
 * `DOCKER_USERNAME`: Your Docker Hub username.
@@ -344,39 +349,56 @@ git push origin main
 To test the application, send requests to `http://<EC2_PUBLIC_IP>/api/hello` to verify the application.
 ![img_3.png](images/img_3.png)
 
-## Assumptions and Decisions
-
-### Assumptions
-
-
-
-
-
-#### EC2 Instance Configuration:
-* The EC2 instance runs Amazon Linux 2 with yum as the package manager.
-* The ec2-user has sudo privileges and can execute Docker commands.
-* Port 80 is open in the EC2 security group for application access, and port 22 is open for SSH.
-#### Spring Boot Application:
+## Assumptions Made During Implementation
+* The .jar file is located at target/cloud-ready-springboot-0.0.1-SNAPSHOT.jar and is started using java -jar.
+* The Docker container exposes port 9000, while the EC2 instance maps it to port 80 using -p 80:9000 to serve HTTP traffic on the default port.
+* Docker and Java are not pre-installed on the EC2 instance, so the automation script installs them during setup.
+* Only one Docker container is run at a time, and any older running containers are stopped to prevent port conflicts.
+* The application is assumed to be stateless, so no persistent volumes or external database connections are required.
+* The EC2 security group allows HTTP (port 80) and SSH (port 22) access.
+* The deployment process involves stopping the existing container/instance before starting the new one (i.e., **no rolling deployment yet**).
 
 
-The application is packaged as a JAR file (e.g., via Maven/Gradle) and runs on port 9000 inside the Docker container.
+## Challenges Faced & How I Solved Them
+1. **Port 80 Conflict with Existing Containers**
 
+When re-deploying, port 80 was sometimes already in use, preventing the new container from starting.
 
+**Fix:** Used Docker command to detect if any container was using port 80, stopped and removed it before starting a new one.
 
-#### Docker Hub:
+2. **Container Name Conflict ("app" already exists)**
 
-The Docker Hub repository (sumitverma77/cloud-ready-springboot) is publicly accessible or properly configured with credentials.
+Re-running deployment failed because a container named app already existed.
 
+**Fix:** Script forcibly stops and removes any container named app before launching a new one.
 
-### Decisions
-#### Docker Layer and Maven Caching:
-* Added actions/cache@v4 and docker/setup-buildx-action@v3 to cache Docker layers and Maven dependencies, reducing rebuild time.
+3. **Image Not Reflecting Latest Changes**
 
-#### Port Management:
+Occasionally, EC2 was running outdated image versions due to cached layers.
 
-* _**Included a script to check and free port 80 on the EC2 instance to prevent conflicts during container deployment._**
+**Fix:** Explicitly pulled the latest image using docker pull as the first step in the SSH deploy script.
 
-#### Error Handling:
+4. **No Logging or Debugging**
 
-* Added fallback commands (e.g., sudo docker stop app || echo "No container named 'app' was running.") to handle cases where containers don’t exist.
-* Included container logs (sudo docker logs --tail 50 app) for debugging deployment issues.
+Without proper logging, it was hard to verify deployment success or diagnose issues.
+
+**Fix:** Added `docker ps -a` and` docker logs --tail 50` at the end to inspect running containers and recent logs.
+
+## Manual Work  
+1. **Created EC2 Instance:**
+Launched a new EC2 instance with appropriate instance type and AMI.
+
+2. **Configured Security Groups:**
+Opened inbound ports 22 (SSH) and 80 (HTTP) to allow SSH access and web traffic.
+
+3. **Connected to EC2 via SSH:**
+Used the .pem key with proper permissions (chmod 400) to securely connect.
+
+4. **Installed Java and Docker Manually:**
+Since the EC2 instance didn’t have Java or Docker pre-installed, installed them manually using package managers.
+
+## Remaining Work / Future Improvements
+1. Attach a Load Balancer and Integrate SSL Certificate:
+To improve availability and security, plan to attach an Elastic Load Balancer (ELB) in front of the EC2 instance and configure an SSL certificate for HTTPS access.
+2. Implement Rolling Deployments:
+   Currently, when deploying new versions, the old container or instance is stopped before the new one starts, causing downtime. Rolling deployment would allow updating the application gradually by replacing instances or containers one at a time without stopping the entire service — ensuring zero downtime and continuous availability during updates.
